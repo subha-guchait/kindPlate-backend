@@ -1,7 +1,8 @@
 const ErrorHandler = require("../utils/errorhandler");
-const Post = require("../models/postModel");
+const { Post } = require("../models/postModel");
 const ClaimRequest = require("../models/claimRequestModel");
 const Like = require("../models/likeModel");
+const mongoose = require("mongoose");
 
 exports.createPost = async (req, res, next) => {
   try {
@@ -110,25 +111,48 @@ exports.getPosts = async (req, res, next) => {
 exports.userPosts = async (req, res, next) => {
   try {
     const userId = req.params.userId || req.user._id;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-
     const skip = (page - 1) * limit;
 
-    const posts = await Post.find({ postedBy: userId })
-      .populate("postedBy", "firstName lastName phone imgUrl")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Using lean() for returning plain JS objects instaed of mongoose documents
+    const combinedPosts = await Post.aggregate([
+      { $match: { postedBy: userObjectId } },
 
-    const count = await Post.countDocuments({ postedBy: userId });
+      {
+        $unionWith: {
+          coll: "archiveposts",
+          pipeline: [{ $match: { postedBy: userObjectId } }],
+        },
+      },
 
-    const totalPages = Math.ceil(count / limit);
+      // ✅ Join with users collection
+      {
+        $lookup: {
+          from: "users",
+          localField: "postedBy",
+          foreignField: "_id",
+          as: "postedBy",
+        },
+      },
+      { $unwind: "$postedBy" }, // flatten array
 
-    //to get likes of the user on the posts
-    const postIds = posts.map((p) => p._id);
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
+
+    // Count totals (parallel execution)
+    const [postCount, archiveCount] = await Promise.all([
+      Post.countDocuments({ postedBy: userId }),
+      mongoose.model("ArchivePost").countDocuments({ postedBy: userId }),
+    ]);
+    const totalCount = postCount + archiveCount;
+    const totalPages = Math.ceil(totalCount / limit);
+
+    // Likes check
+    const postIds = combinedPosts.map((p) => p._id);
     const userLikes = await Like.find({
       postId: { $in: postIds },
       userId,
@@ -137,17 +161,16 @@ exports.userPosts = async (req, res, next) => {
     const likedPostIds = new Set(
       userLikes.map((like) => like.postId.toString())
     );
-
-    posts.forEach((post) => {
+    combinedPosts.forEach((post) => {
       post.likedByUser = likedPostIds.has(post._id.toString());
     });
 
     res.status(200).json({
       success: true,
-      posts,
-      totalPost: count,
+      posts: combinedPosts,
+      totalPost: totalCount,
       hasPreviousPage: page > 1,
-      hasNextpage: page < totalPages,
+      hasNextPage: page < totalPages,
       previousPage: page > 1 ? page - 1 : null,
       nextPage: page < totalPages ? page + 1 : null,
       lastPage: totalPages,

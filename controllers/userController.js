@@ -24,16 +24,20 @@ exports.getProfile = async (req, res, next) => {
 
 exports.updateProfile = async (req, res, next) => {
   try {
-    const { name, phone } = req.body;
-    if (!name && !phone) {
+    const { name, phone, imgUrl } = req.body;
+    if (!name && !phone && !imgUrl) {
       return next(new ErrorHandler("provide atleast one field to update", 400));
     }
 
-    if (name == req.user.name && phone == req.user.phone) {
+    if (
+      name == req.user.name &&
+      phone == req.user.phone &&
+      imgUrl == req.user.imgUrl
+    ) {
       return res.status(200).json({ sucess: true, message: "No changes made" });
     }
 
-    await updateProfile(req.user.id, { name, phone });
+    await updateProfile(req.user.id, { name, phone, imgUrl });
 
     const profile = await getProfile(req.user.id);
 

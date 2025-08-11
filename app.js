@@ -7,6 +7,7 @@ const authRoutes = require("./routes/authRoutes");
 const mediaRoutes = require("./routes/mediaRoutes");
 const postRoutes = require("./routes/postRoutes");
 const userRoutes = require("./routes/userRoutes");
+require("./cronJobs/archivePostsJob");
 
 const app = express();
 

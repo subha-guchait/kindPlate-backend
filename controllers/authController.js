@@ -3,6 +3,7 @@ const User = require("../models/userModel");
 const ForgotPasswordRequest = require("../models/forgotPasswordRequestModel");
 const ErrorHandler = require("../utils/errorhandler");
 const generateJwtToken = require("../utils/generateJwt");
+const { v4: uuidv4 } = require("uuid");
 
 exports.register = async (req, res, next) => {
   try {
@@ -27,12 +28,15 @@ exports.register = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const avatarUrl = `https://api.dicebear.com/7.x/adventurer/svg?seed=${uuidv4()}`;
+
     const user = new User({
       firstName,
       lastName,
       email,
       phone,
       password: hashedPassword,
+      imgUrl: avatarUrl,
       userType,
       isAccepted,
     });

@@ -12,7 +12,7 @@ const getProfile = async (userId) => {
 
 const updateProfile = async (userId, updatedData) => {
   try {
-    const { name, phone } = updatedData;
+    const { name, phone, imgUrl } = updatedData;
 
     const user = await User.findById(userId);
     const existingPhone = await User.findOne({ phone });
@@ -23,6 +23,7 @@ const updateProfile = async (userId, updatedData) => {
 
     user.name = name;
     user.phone = phone;
+    user.imgUrl = imgUrl;
 
     return await user.save();
   } catch (err) {
