@@ -152,10 +152,12 @@ exports.userPosts = async (req, res, next) => {
     const totalPages = Math.ceil(totalCount / limit);
 
     // Likes check
+    const viewerId = req.user?._id;
+
     const postIds = combinedPosts.map((p) => p._id);
     const userLikes = await Like.find({
       postId: { $in: postIds },
-      userId,
+      userId: viewerId,
     }).select("postId");
 
     const likedPostIds = new Set(
