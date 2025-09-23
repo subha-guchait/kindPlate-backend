@@ -190,3 +190,35 @@ exports.updatePassword = async (req, res, next) => {
     return res.status(500).json({ message: "Error updating password" });
   }
 };
+
+exports.changePassword = async (req, res, next) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    console.log(req.user);
+
+    const isMatch = await bcrypt.compare(oldPassword, req.user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Old password is incorrect." });
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    req.user.password = hashedPassword;
+    req.user.tokenVersion += 1;
+    await req.user.save();
+
+    const token = generateJwtToken(req.user);
+
+    return res
+      .status(200)
+      .json({
+        success: true,
+        token: token,
+        message: "Password updated sucessfully",
+      });
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ message: "Error updating password" });
+  }
+};

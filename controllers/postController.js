@@ -1,18 +1,40 @@
 const ErrorHandler = require("../utils/errorhandler");
-const { Post } = require("../models/postModel");
+const { Post, ArchivePost } = require("../models/postModel");
+const User = require("../models/userModel");
 const ClaimRequest = require("../models/claimRequestModel");
 const Like = require("../models/likeModel");
+const PointHistory = require("../models/pointHistoryModel");
 const mongoose = require("mongoose");
+const { deleteFromS3, getPublicUrl } = require("../services/awsService");
+const validateAndExtractS3Key = require("../utils/validateAndExtractS3Key");
 
 exports.createPost = async (req, res, next) => {
   try {
-    const post = new Post({ ...req.body, postedBy: req.user._id });
+    let { mediaUrl, ...rest } = req.body;
+
+    let mediaKey = null;
+
+    if (mediaUrl) {
+      const { valid, key } = validateAndExtractS3Key(mediaUrl);
+      if (!valid) {
+        return next(new ErrorHandler("Invalid media URL", 400));
+      }
+      mediaKey = key;
+    }
+    const post = new Post({
+      ...rest,
+      mediaUrl: mediaKey,
+      postedBy: req.user._id,
+    });
     const newPost = await post.save();
 
     res.status(201).json({
       success: true,
       message: "post created successfully",
-      post: newPost,
+      post: {
+        ...newPost.toObject(),
+        mediaUrl: mediaUrl || null,
+      },
     });
   } catch (err) {
     console.log(err);
@@ -21,24 +43,70 @@ exports.createPost = async (req, res, next) => {
 };
 
 exports.deletePost = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { postId } = req.params;
     if (!postId) {
       return next(new ErrorHandler("Please provide a valid postId", 400));
     }
 
-    const post = await Post.findById(postId);
+    let post = await Post.findById(postId).session(session);
+
+    // If not found, check ArchivedPost collection
+    if (!post) {
+      post = await ArchivePost.findById(postId).session(session);
+    }
+
+    if (!post) {
+      return next(new ErrorHandler("Post not found", 404));
+    }
 
     if (post.postedBy.toString() !== req.user._id.toString()) {
       return next(new ErrorHandler("You are not authorize to do this", 403));
     }
 
-    await post.deleteOne();
+    await post.deleteOne({ session });
+
+    if (post.mediaUrl) {
+      await deleteFromS3(post.mediaUrl);
+    }
+
+    const previousPointDetails = await PointHistory.findOne({
+      postId: post._id,
+    });
+
+    if (previousPointDetails) {
+      await PointHistory.create(
+        [
+          {
+            userId: post.postedBy,
+            points: -previousPointDetails.points,
+            transactionType: "debit",
+            source: "post_deleted",
+            description: `Food Post deleted`,
+          },
+        ],
+        { session }
+      );
+      await User.findByIdAndUpdate(
+        post.postedBy,
+        {
+          $inc: { points: -previousPointDetails.points },
+        },
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+    session.endSession();
 
     res
       .status(200)
       .json({ success: true, message: "Post deleted successfully" });
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     console.log(err);
     return next(new ErrorHandler("Something went wrong", 500));
   }
@@ -66,7 +134,7 @@ exports.getPosts = async (req, res, next) => {
       filter["location.state"] = req.query.state;
     }
 
-    const posts = await Post.find(filter)
+    let posts = await Post.find(filter)
       .populate("postedBy", "firstName lastName imgUrl phone")
       .sort({ expiry: 1 })
       .skip(skip)
@@ -88,8 +156,12 @@ exports.getPosts = async (req, res, next) => {
       userLikes.map((like) => like.postId.toString())
     );
 
-    posts.forEach((post) => {
-      post.likedByUser = likedPostIds.has(post._id.toString());
+    posts = posts.map((post) => {
+      return {
+        ...post,
+        likedByUser: likedPostIds.has(post._id.toString()),
+        mediaUrl: post.mediaUrl ? getPublicUrl(post.mediaUrl) : null,
+      };
     });
 
     res.status(200).json({
@@ -134,6 +206,16 @@ exports.userPosts = async (req, res, next) => {
           localField: "postedBy",
           foreignField: "_id",
           as: "postedBy",
+          pipeline: [
+            {
+              $project: {
+                firstName: 1,
+                lastName: 1,
+                imgUrl: 1,
+                phone: 1,
+              },
+            },
+          ],
         },
       },
       { $unwind: "$postedBy" }, // flatten array
@@ -163,13 +245,17 @@ exports.userPosts = async (req, res, next) => {
     const likedPostIds = new Set(
       userLikes.map((like) => like.postId.toString())
     );
-    combinedPosts.forEach((post) => {
-      post.likedByUser = likedPostIds.has(post._id.toString());
+    const transformedPosts = combinedPosts.map((post) => {
+      return {
+        ...post,
+        likedByUser: likedPostIds.has(post._id.toString()),
+        mediaUrl: post.mediaUrl ? getPublicUrl(post.mediaUrl) : null,
+      };
     });
 
     res.status(200).json({
       success: true,
-      posts: combinedPosts,
+      posts: transformedPosts,
       totalPost: totalCount,
       hasPreviousPage: page > 1,
       hasNextPage: page < totalPages,
@@ -341,6 +427,21 @@ exports.updateClaimed = async (req, res, next) => {
 
     post.isClaimed = true;
     await post.save();
+
+    //update point
+    let point = calculatePoints(post.servings);
+    await PointHistory.create({
+      userId: req.user._id,
+      postId: post._id,
+      points: point,
+      transactionType: "credit",
+      source: "food_claim",
+      description: `Donated ${post.servings} Qty food.`,
+    });
+    await User.findByIdAndUpdate(req.user._id, {
+      $inc: { points: point },
+    });
+
     res
       .status(200)
       .json({ success: true, message: "Post marked as claimed", post });
@@ -393,3 +494,42 @@ exports.likeUnlikePost = async (req, res, next) => {
     return next(new ErrorHandler("Failed to like/unlike post", 500));
   }
 };
+
+function calculatePoints(servings) {
+  servings = Number(servings);
+  const maxPoint = 100;
+  let point = 10;
+  let extraPoint = 0;
+  if (servings > 10) {
+    extraPoint = Math.ceil((servings - 10) / 10) * 5;
+  }
+
+  point += extraPoint;
+  return Math.min(point, maxPoint);
+}
+
+// Validate AWS media URL
+function isValidS3Url(mediaUrl) {
+  try {
+    const parsed = new URL(mediaUrl);
+    const expectedHost = `${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`;
+    return parsed.hostname === expectedHost;
+  } catch (err) {
+    return false;
+  }
+}
+
+// notes
+// parsed = new URL(mediaUrl);
+
+// here we get structured parts
+
+// parsed.protocol → "https:"
+
+// parsed.hostname → "my-bucket.s3.ap-south-1.amazonaws.com" ✅
+
+// parsed.pathname → "/uploads/file.png"
+
+// parsed.search → "?X-Amz-..." (if it’s a signed URL)
+
+// parsed.href → full URL

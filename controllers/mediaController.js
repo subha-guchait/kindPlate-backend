@@ -61,6 +61,30 @@ exports.uploadPostMedia = async (req, res) => {
   }
 };
 
+exports.uploadAdsMedia = async (req, res) => {
+  try {
+    const { fileName, contentType } = req.body;
+
+    if (!fileName || !contentType) {
+      return next(new ErrorHandler("Missing required fields", 400));
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
+    if (!allowedTypes.includes(contentType)) {
+      return next(new ErrorHandler("Only Images allowed", 400));
+    }
+
+    // Profile photo S3 path
+    const key = generateUUIDBasedKey(req.user.id, "ads", contentType);
+    const url = await putObjectUrl(key, contentType);
+
+    res.status(200).json({ success: true, url });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Failed to get signed url for Ads" });
+  }
+};
+
 function generateUUIDBasedKey(userId, type, contentType) {
   const uuid = uuidv4();
   const extension = getExtensionFromContentType(contentType);

@@ -31,9 +31,10 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin"],
+      enum: ["user", "admin", "superAdmin"],
       default: "user",
     },
+    points: { type: Number, default: 0 },
     userType: {
       type: String,
       enum: [

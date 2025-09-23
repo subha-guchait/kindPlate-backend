@@ -25,7 +25,7 @@ const authenticate = async (req, res, next) => {
       return next(new ErrorHandler("Jwt Expired", 401));
     }
 
-    if (user.isBlocked) {
+    if (userDetails.isBlocked) {
       return next(
         new ErrorHandler(
           "Your account has been blocked please contact support",

@@ -1,17 +1,21 @@
 const ErrorHandler = require("../utils/errorhandler");
 
-const validate = (schema) => (req, res, next) => {
-  const { error, value } = schema.validate(req.body, {
-    abortEarly: false,
-    stripUnknown: true,
-  });
+const validate =
+  (schema, source = "body") =>
+  (req, res, next) => {
+    const data = req[source]; // source can be "body", "query", or "params"
+    const { error, value } = schema.validate(data, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
 
-  if (error) {
-    return next(new ErrorHandler(error.details[0].message, 400));
-  }
+    if (error) {
+      return next(new ErrorHandler(error.details[0].message, 400));
+    }
 
-  req.body = value;
-  next();
-};
+    // replace the source with validated value
+    req[source] = value;
+    next();
+  };
 
 module.exports = validate;

@@ -7,6 +7,12 @@ const authRoutes = require("./routes/authRoutes");
 const mediaRoutes = require("./routes/mediaRoutes");
 const postRoutes = require("./routes/postRoutes");
 const userRoutes = require("./routes/userRoutes");
+const priceRoutes = require("./routes/priceRoutes");
+const adRoutes = require("./routes/adRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+const analyticRoutes = require("./routes/admin/analyticsRoutes");
+const userAdminRoutes = require("./routes/admin/userAdminRoutes");
+const adminRoutes = require("./routes/admin/adminRoutes");
 require("./cronJobs/archivePostsJob");
 
 const app = express();
@@ -19,6 +25,12 @@ app.use("/api/auth", authRoutes);
 app.use("/api/media", mediaRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/price", priceRoutes);
+app.use("/api/ads", adRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/admin/analytics", analyticRoutes);
+app.use("/api/admin/users", userAdminRoutes);
+app.use("/api/admin/admins", adminRoutes);
 
 // Error middleware
 app.use(errorMiddleware);
