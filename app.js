@@ -13,6 +13,7 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const analyticRoutes = require("./routes/admin/analyticsRoutes");
 const userAdminRoutes = require("./routes/admin/userAdminRoutes");
 const adminRoutes = require("./routes/admin/adminRoutes");
+const aiRoutes = require("./routes/aiRoutes");
 require("./cronJobs/archivePostsJob");
 
 const app = express();
@@ -31,7 +32,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/admin/analytics", analyticRoutes);
 app.use("/api/admin/users", userAdminRoutes);
 app.use("/api/admin/admins", adminRoutes);
-
+app.use("/api/ai", aiRoutes);
 // Error middleware
 app.use(errorMiddleware);
 

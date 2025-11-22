@@ -1,7 +1,7 @@
 const ErrorHandler = require("../utils/errorhandler");
 const { Post, ArchivePost } = require("../models/postModel");
 const User = require("../models/userModel");
-const ClaimRequest = require("../models/claimRequestModel");
+// const ClaimRequest = require("../models/claimRequestModel");
 const Like = require("../models/likeModel");
 const PointHistory = require("../models/pointHistoryModel");
 const mongoose = require("mongoose");
